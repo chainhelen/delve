@@ -54,6 +54,11 @@ type Config struct {
 	// DebugFileDirectories is the list of directories Delve will use
 	// in order to resolve external debug info files.
 	DebugInfoDirectories []string `yaml:"debug-info-directories"`
+
+	// LinerKind allows user to switch the kind liner of cmds, "pl"(defalut) or "gp".
+	// "pl" for "github.com/peterh/liner"
+	// "gp  for "github.com/c-bata/go-prompt"
+	Liner string `yaml:"liner"`
 }
 
 // LoadConfig attempts to populate a Config object from the config.yml file.
@@ -221,6 +226,11 @@ substitute-path:
 
 # List of directories to use when searching for separate debug info files.
 debug-info-directories: ["/usr/lib/debug/.build-id"]
+
+# LinerKind allows user to switch the kind liner of cmds, "Pl"(defalut) or "Gp".
+# "Pl" for "github.com/peterh/liner"
+# "Gp  for "github.com/c-bata/go-prompt"
+liner-kind: "Pl"
 `)
 	return err
 }

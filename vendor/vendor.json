@@ -1,0 +1,55 @@
+{
+	"comment": "",
+	"ignore": "",
+	"package": [
+		{
+			"checksumSHA1": "rm3PXcqUexGyMdVLBpLanS7mDNk=",
+			"path": "github.com/c-bata/go-prompt",
+			"revision": "6b41a4182153f4167d726f621bec7fcea0f0e26e",
+			"revisionTime": "2019-07-08T12:22:29Z"
+		},
+		{
+			"checksumSHA1": "kfmuTFIX3KCYgpz/NiL0BTFFCZU=",
+			"path": "github.com/c-bata/go-prompt/completer",
+			"revision": "6b41a4182153f4167d726f621bec7fcea0f0e26e",
+			"revisionTime": "2019-07-08T12:22:29Z"
+		},
+		{
+			"checksumSHA1": "c/+ogMHkdvT6BQXf17T/Bqm+3YU=",
+			"path": "github.com/c-bata/go-prompt/internal/bisect",
+			"revision": "6b41a4182153f4167d726f621bec7fcea0f0e26e",
+			"revisionTime": "2019-07-08T12:22:29Z"
+		},
+		{
+			"checksumSHA1": "cEQUZoDRTe1NlAfSLQqpOzgm214=",
+			"path": "github.com/c-bata/go-prompt/internal/debug",
+			"revision": "6b41a4182153f4167d726f621bec7fcea0f0e26e",
+			"revisionTime": "2019-07-08T12:22:29Z"
+		},
+		{
+			"checksumSHA1": "Vyc9gcAeMtmHobWsN7v/dRt7rPI=",
+			"path": "github.com/c-bata/go-prompt/internal/strings",
+			"revision": "6b41a4182153f4167d726f621bec7fcea0f0e26e",
+			"revisionTime": "2019-07-08T12:22:29Z"
+		},
+		{
+			"checksumSHA1": "10zaLEef5GXyc7AHiGus4MjgGoo=",
+			"path": "github.com/c-bata/go-prompt/internal/term",
+			"revision": "6b41a4182153f4167d726f621bec7fcea0f0e26e",
+			"revisionTime": "2019-07-08T12:22:29Z"
+		},
+		{
+			"checksumSHA1": "zsxkwSU0tjzbF/mIKZ2gxkJlfRQ=",
+			"path": "github.com/mattn/go-runewidth",
+			"revision": "703b5e6b11ae25aeb2af9ebb5d5fdf8fa2575211",
+			"revisionTime": "2018-12-18T00:06:49Z"
+		},
+		{
+			"checksumSHA1": "d8yl2oOw1e9cmhmM2YJifADkPps=",
+			"path": "github.com/pkg/term/termios",
+			"revision": "aa71e9d9e942418fbb97d80895dcea70efed297c",
+			"revisionTime": "2019-01-09T20:30:06Z"
+		}
+	],
+	"rootPath": "github.com/go-delve/delve"
+}

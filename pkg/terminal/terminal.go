@@ -10,8 +10,6 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/peterh/liner"
-
 	"github.com/go-delve/delve/pkg/config"
 	"github.com/go-delve/delve/pkg/terminal/starbind"
 	"github.com/go-delve/delve/service"
@@ -48,7 +46,7 @@ type Term struct {
 	client   service.Client
 	conf     *config.Config
 	prompt   string
-	line     *liner.State
+	line     Liner
 	cmds     *Commands
 	dumb     bool
 	stdout   io.Writer
@@ -95,7 +93,7 @@ func New(client service.Client, conf *config.Config) *Term {
 		client: client,
 		conf:   conf,
 		prompt: "(dlv) ",
-		line:   liner.NewLiner(),
+		line:   newLiner(conf.Liner),
 		cmds:   cmds,
 		dumb:   dumb,
 		stdout: w,
@@ -165,41 +163,7 @@ func (t *Term) Run() (int, error) {
 	ch := make(chan os.Signal)
 	signal.Notify(ch, syscall.SIGINT)
 	go t.sigintGuard(ch, multiClient)
-
-	t.line.SetCompleter(func(line string) (c []string) {
-		if strings.HasPrefix(line, "break ") || strings.HasPrefix(line, "b ") {
-			filter := line[strings.Index(line, " ")+1:]
-			funcs, _ := t.client.ListFunctions(filter)
-			for _, f := range funcs {
-				c = append(c, "break "+f)
-			}
-			return
-		}
-		for _, cmd := range t.cmds.cmds {
-			for _, alias := range cmd.aliases {
-				if strings.HasPrefix(alias, strings.ToLower(line)) {
-					c = append(c, alias)
-				}
-			}
-		}
-		return
-	})
-
-	fullHistoryFile, err := config.GetConfigFilePath(historyFile)
-	if err != nil {
-		fmt.Printf("Unable to load history file: %v.", err)
-	}
-
-	f, err := os.Open(fullHistoryFile)
-	if err != nil {
-		f, err = os.Create(fullHistoryFile)
-		if err != nil {
-			fmt.Printf("Unable to open history file: %v. History will not be saved for this session.", err)
-		}
-	}
-
-	t.line.ReadHistory(f)
-	f.Close()
+	t.restructLiner()
 	fmt.Println("Type 'help' for list of commands.")
 
 	if t.InitFile != "" {
@@ -300,7 +264,42 @@ func crossPlatformPath(path string) string {
 	return path
 }
 
+func (t *Term) restructLiner(){
+	if t.line != nil {
+		if t.conf.Liner != t.line.KindName() {
+			t.line.Close()
+			t.line = newLiner(t.conf.Liner)
+			t.conf.Liner = t.line.KindName()
+		}
+	} else {
+		t.line = newLiner(t.conf.Liner)
+		t.conf.Liner = t.line.KindName()
+	}
+
+	t.line.SetTermForComplete(t)
+
+	fullHistoryFile, err := config.GetConfigFilePath(historyFile)
+	if err != nil {
+		fmt.Printf("Unable to load history file: %v.", err)
+	}
+
+	f, err := os.Open(fullHistoryFile)
+	if err != nil {
+		f, err = os.Create(fullHistoryFile)
+		if err != nil {
+			fmt.Printf("Unable to open history file: %v. History will not be saved for this session.", err)
+		}
+	}
+
+	t.line.ReadHistory(f)
+	f.Close()
+}
+
 func (t *Term) promptForInput() (string, error) {
+	if  t.conf.Liner != t.line.KindName() || t.line == nil {
+		t.restructLiner()
+	}
+
 	l, err := t.line.Prompt(t.prompt)
 	if err != nil {
 		return "", err
@@ -314,7 +313,7 @@ func (t *Term) promptForInput() (string, error) {
 	return l, nil
 }
 
-func yesno(line *liner.State, question string) (bool, error) {
+func yesno(line Liner, question string) (bool, error) {
 	for {
 		answer, err := line.Prompt(question)
 		if err != nil {
