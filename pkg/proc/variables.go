@@ -524,12 +524,11 @@ func (v *Variable) parseG() (*G, error) {
 	_, deref := v.RealType.(*godwarf.PtrType)
 
 	if deref {
-		gaddrbytes := make([]byte, v.bi.Arch.PtrSize())
-		_, err := mem.ReadMemory(gaddrbytes, uintptr(gaddr))
+		var err error
+		gaddr, err = readUintRaw(mem, uintptr(gaddr), int64(v.bi.Arch.PtrSize()))
 		if err != nil {
 			return nil, fmt.Errorf("error derefing *G %s", err)
 		}
-		gaddr = binary.LittleEndian.Uint64(gaddrbytes)
 	}
 	if gaddr == 0 {
 		id := 0

@@ -613,6 +613,12 @@ func GoroutinesInfo(dbp *Target, start, count int) ([]*G, int, error) {
 	return allg, -1, nil
 }
 
+// ClearAllGCache clears the cached contents of the cache for runtime.allgs.
+func (gcache *goroutineCache) ClearAllGCache() {
+	gcache.partialGCache = nil
+	gcache.allGCache = nil
+}
+
 // FindGoroutine returns a G struct representing the goroutine
 // specified by `gid`.
 func FindGoroutine(dbp *Target, gid int) (*G, error) {

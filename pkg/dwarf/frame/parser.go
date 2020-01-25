@@ -6,7 +6,7 @@ package frame
 import (
 	"bytes"
 	"encoding/binary"
-
+	"fmt"
 	"github.com/go-delve/delve/pkg/dwarf/util"
 )
 
@@ -20,15 +20,16 @@ type parseContext struct {
 	common  *CommonInformationEntry
 	frame   *FrameDescriptionEntry
 	length  uint32
+	ptrSize int
 }
 
 // Parse takes in data (a byte slice) and returns a slice of
 // commonInformationEntry structures. Each commonInformationEntry
 // has a slice of frameDescriptionEntry structures.
-func Parse(data []byte, order binary.ByteOrder, staticBase uint64) FrameDescriptionEntries {
+func Parse(data []byte, order binary.ByteOrder, staticBase uint64, ptrSize int) FrameDescriptionEntries {
 	var (
 		buf  = bytes.NewBuffer(data)
-		pctx = &parseContext{buf: buf, entries: NewFrameIndex(), staticBase: staticBase}
+		pctx = &parseContext{buf: buf, entries: NewFrameIndex(), staticBase: staticBase, ptrSize: ptrSize}
 	)
 
 	for fn := parselength; buf.Len() != 0; {
@@ -67,11 +68,25 @@ func parselength(ctx *parseContext) parsefunc {
 	return parseFDE
 }
 
+func nextBufByPtrSize(buf []byte, ptrSize int) (uint64, []byte) {
+	switch ptrSize {
+	case 8:
+		return binary.LittleEndian.Uint64(buf[:8]), buf[8:]
+	case 4:
+		return uint64(binary.LittleEndian.Uint32(buf[:4])), buf[4:]
+	default:
+		panic(fmt.Errorf("not support ptr size %d", ptrSize))
+	}
+}
+
 func parseFDE(ctx *parseContext) parsefunc {
+	var num uint64
 	r := ctx.buf.Next(int(ctx.length))
 
-	ctx.frame.begin = binary.LittleEndian.Uint64(r[:8]) + ctx.staticBase
-	ctx.frame.size = binary.LittleEndian.Uint64(r[8:16])
+	num, r = nextBufByPtrSize(r, ctx.ptrSize)
+	ctx.frame.begin = num + ctx.staticBase
+	num, r = nextBufByPtrSize(r, ctx.ptrSize)
+	ctx.frame.size = num
 
 	// Insert into the tree after setting address range begin
 	// otherwise compares won't work.
@@ -80,7 +95,7 @@ func parseFDE(ctx *parseContext) parsefunc {
 	// The rest of this entry consists of the instructions
 	// so we can just grab all of the data from the buffer
 	// cursor to length.
-	ctx.frame.Instructions = r[16:]
+	ctx.frame.Instructions = r
 	ctx.length = 0
 
 	return parselength

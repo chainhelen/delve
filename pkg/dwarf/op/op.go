@@ -17,10 +17,11 @@ type Opcode byte
 type stackfn func(Opcode, *context) error
 
 type context struct {
-	buf    *bytes.Buffer
-	stack  []int64
-	pieces []Piece
-	reg    bool
+	buf     *bytes.Buffer
+	stack   []int64
+	pieces  []Piece
+	reg     bool
+	ptrSize int
 
 	DwarfRegisters
 }
@@ -36,11 +37,12 @@ type Piece struct {
 // ExecuteStackProgram executes a DWARF location expression and returns
 // either an address (int64), or a slice of Pieces for location expressions
 // that don't evaluate to an address (such as register and composite expressions).
-func ExecuteStackProgram(regs DwarfRegisters, instructions []byte) (int64, []Piece, error) {
+func ExecuteStackProgram(regs DwarfRegisters, instructions []byte, ptrSize int) (int64, []Piece, error) {
 	ctxt := &context{
 		buf:            bytes.NewBuffer(instructions),
 		stack:          make([]int64, 0, 3),
 		DwarfRegisters: regs,
+		ptrSize:        ptrSize,
 	}
 
 	for {
@@ -133,7 +135,14 @@ func callframecfa(opcode Opcode, ctxt *context) error {
 }
 
 func addr(opcode Opcode, ctxt *context) error {
-	ctxt.stack = append(ctxt.stack, int64(binary.LittleEndian.Uint64(ctxt.buf.Next(8))+ctxt.StaticBase))
+	switch ctxt.ptrSize {
+	case 8:
+		ctxt.stack = append(ctxt.stack, int64(binary.LittleEndian.Uint64(ctxt.buf.Next(8))+ctxt.StaticBase))
+	case 4:
+		ctxt.stack = append(ctxt.stack, int64(uint64(binary.LittleEndian.Uint32(ctxt.buf.Next(4)))+ctxt.StaticBase))
+	default:
+		return fmt.Errorf("not support ptr size %d", ctxt.ptrSize)
+	}
 	return nil
 }
 
