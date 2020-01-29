@@ -428,7 +428,15 @@ func getGVariable(thread Thread) (*Variable, error) {
 	gaddr, hasgaddr := regs.GAddr()
 	if !hasgaddr {
 		gaddrbs := make([]byte, thread.Arch().PtrSize())
-		_, err := thread.ReadMemory(gaddrbs, uintptr(regs.TLS()+thread.BinInfo().GStructOffset()))
+
+		var err error
+		if thread.BinInfo().Arch.PtrSize() == 4 {
+			_, err = thread.ReadMemory(gaddrbs, uintptr(uint32(regs.TLS()+thread.BinInfo().GStructOffset())))
+		} else {
+			_, err = thread.ReadMemory(gaddrbs, uintptr(regs.TLS()+thread.BinInfo().GStructOffset()))
+		}
+
+		fmt.Printf("11111111111111111333333333333 %s %d %d\n", err, regs.TLS(), thread.BinInfo().GStructOffset())
 		if err != nil {
 			return nil, err
 		}
@@ -483,7 +491,9 @@ func GetG(thread Thread) (*G, error) {
 		return nil, nil
 	}
 	gaddr, err := getGVariable(thread)
+	fmt.Printf("thread %#v\n\n", thread)
 	if err != nil {
+		fmt.Printf("thread!!!! %#v %s\n\n", thread, err)
 		return nil, err
 	}
 

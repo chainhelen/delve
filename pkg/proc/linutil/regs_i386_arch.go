@@ -14,6 +14,7 @@ type I386Registers struct {
 	Regs     *I386PtraceRegs
 	Fpregs   []proc.Register
 	Fpregset *I386Xstate
+	Tls      uint64
 }
 
 // I386PtraceRegs is the struct used by the linux kernel to return the
@@ -97,7 +98,7 @@ func (r *I386Registers) CX() uint64 {
 
 // TLS returns the address of the thread local storage memory segment.
 func (r I386Registers) TLS() uint64 {
-	return uint64(r.Regs.Xfs)
+	return r.Tls
 }
 
 // GAddr returns the address of the G variable if it is known, 0 and false

@@ -926,8 +926,10 @@ func loadBinaryInfoElf(bi *BinaryInfo, image *Image, path string, addr uint64, w
 	image.loclist = loclist.New(debugLocBytes, bi.Arch.PtrSize())
 
 	wg.Add(2)
-	go bi.parseDebugFrameElf(image, dwarfFile, wg)
-	go bi.loadDebugInfoMaps(image, debugLineBytes, wg, nil)
+	bi.parseDebugFrameElf(image, dwarfFile, nil)
+	bi.loadDebugInfoMaps(image, debugLineBytes, nil, nil)
+	wg.Done()
+	wg.Done()
 	if image.index == 0 {
 		// determine g struct offset only when loading the executable file
 		wg.Add(1)
@@ -937,7 +939,9 @@ func loadBinaryInfoElf(bi *BinaryInfo, image *Image, path string, addr uint64, w
 }
 
 func (bi *BinaryInfo) parseDebugFrameElf(image *Image, exe *elf.File, wg *sync.WaitGroup) {
-	defer wg.Done()
+	if wg != nil {
+		defer wg.Done()
+	}
 
 	debugFrameData, err := godwarf.GetDebugSectionElf(exe, "frame")
 	if err != nil {
@@ -975,10 +979,13 @@ func (bi *BinaryInfo) setGStructOffsetElf(image *Image, exe *elf.File, wg *sync.
 			break
 		}
 	}
+	fmt.Println("333333333333333333333")
 	if tlsg == nil {
 		bi.gStructOffset = ^uint64(8) + 1 // -8
+		bi.gStructOffset = ^uint64(4) + 1
 		return
 	}
+	fmt.Println("222222222222222222222")
 	var tls *elf.Prog
 	for _, prog := range exe.Progs {
 		if prog.Type == elf.PT_TLS {
@@ -1126,8 +1133,10 @@ func loadBinaryInfoMacho(bi *BinaryInfo, image *Image, path string, entryPoint u
 	image.loclist = loclist.New(debugLocBytes, bi.Arch.PtrSize())
 
 	wg.Add(2)
-	go bi.parseDebugFrameMacho(image, exe, wg)
-	go bi.loadDebugInfoMaps(image, debugLineBytes, wg, bi.setGStructOffsetMacho)
+	wg.Done()
+	wg.Done()
+	go bi.parseDebugFrameMacho(image, exe, nil)
+	go bi.loadDebugInfoMaps(image, debugLineBytes, nil, bi.setGStructOffsetMacho)
 	return nil
 }
 
@@ -1144,7 +1153,9 @@ func (bi *BinaryInfo) setGStructOffsetMacho() {
 }
 
 func (bi *BinaryInfo) parseDebugFrameMacho(image *Image, exe *macho.File, wg *sync.WaitGroup) {
-	defer wg.Done()
+	if wg != nil {
+		defer wg.Done()
+	}
 
 	debugFrameBytes, err := godwarf.GetDebugSectionMacho(exe, "frame")
 	if err != nil {

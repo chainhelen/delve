@@ -55,7 +55,7 @@ func registers(thread *Thread, floatingPoint bool) (proc.Registers, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := &linutil.I386Registers{&regs, nil, nil}
+	r := &linutil.I386Registers{&regs, nil, nil, 0}
 	if floatingPoint {
 		var fpregset linutil.I386Xstate
 		r.Fpregs, fpregset, err = thread.fpRegisters()
@@ -64,6 +64,11 @@ func registers(thread *Thread, floatingPoint bool) (proc.Registers, error) {
 			return nil, err
 		}
 	}
+	thread.dbp.execPtraceFunc(func() {
+		fmt.Printf("!!!xgs %d, xfs %d\n", regs.Xgs, regs.Xfs)
+		fmt.Printf("%#v\n", regs)
+		r.Tls = uint64(PtraceGetTls(regs.Xgs, thread.ThreadID()))
+	})
 	return r, nil
 }
 
