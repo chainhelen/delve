@@ -61,7 +61,7 @@ func PtraceGetTls(gs int32, tid int) uint32 {
 	fmt.Printf("limit = %#v, base = %#v\n", limit, base)*/
 
 	// I not sure this defination of struct UserStruct is right
-	// ud := [4]uint32{0, uint32(gs), 0, 0}
+	// ud := [4]uint32{}
 	ud := [16]byte{}
 	// gs usually is 0x33
 	_, _, err := syscall.Syscall6(syscall.SYS_PTRACE, sys.PTRACE_GET_THREAD_AREA, uintptr(tid), uintptr(unsafe.Pointer(&gs)), uintptr(unsafe.Pointer(&ud)), 0, 0)
