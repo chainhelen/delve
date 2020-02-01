@@ -65,8 +65,6 @@ func registers(thread *Thread, floatingPoint bool) (proc.Registers, error) {
 		}
 	}
 	thread.dbp.execPtraceFunc(func() {
-		fmt.Printf("!!!xgs %d, xfs %d\n", regs.Xgs, regs.Xfs)
-		fmt.Printf("%#v\n", regs)
 		r.Tls = uint64(PtraceGetTls(regs.Xgs, thread.ThreadID()))
 	})
 	return r, nil

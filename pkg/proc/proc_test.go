@@ -574,7 +574,7 @@ func TestNextConcurrent(t *testing.T) {
 	})
 }
 
-func TestNextConcurrent	Variant2(t *testing.T) {
+func TestNextConcurrentVariant2(t *testing.T) {
 	if runtime.GOOS == "freebsd" {
 		t.Skip("test is not valid on FreeBSD")
 	}

@@ -436,7 +436,6 @@ func getGVariable(thread Thread) (*Variable, error) {
 			_, err = thread.ReadMemory(gaddrbs, uintptr(regs.TLS()+thread.BinInfo().GStructOffset()))
 		}
 
-		fmt.Printf("11111111111111111333333333333 %s %d %d\n", err, regs.TLS(), thread.BinInfo().GStructOffset())
 		if err != nil {
 			return nil, err
 		}
@@ -491,9 +490,7 @@ func GetG(thread Thread) (*G, error) {
 		return nil, nil
 	}
 	gaddr, err := getGVariable(thread)
-	fmt.Printf("thread %#v\n\n", thread)
 	if err != nil {
-		fmt.Printf("thread!!!! %#v %s\n\n", thread, err)
 		return nil, err
 	}
 

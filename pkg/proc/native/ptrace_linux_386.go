@@ -1,9 +1,11 @@
 package native
 
+// #include "ptrace_linux_386.h"
+import "C"
+
 import (
 	"fmt"
 	"syscall"
-	"time"
 	"unsafe"
 
 	sys "golang.org/x/sys/unix"
@@ -53,20 +55,22 @@ type UserDesc struct {
 }
 
 func PtraceGetTls(gs int32, tid int) uint32 {
+	/*var limit uint16
+	var base uint32
+	C.SgdtAddr((*C.ushort)(unsafe.Pointer(&limit)), (*C.ulong)(unsafe.Pointer(&base)))
+	fmt.Printf("limit = %#v, base = %#v\n", limit, base)*/
+
 	// I not sure this defination of struct UserStruct is right
-	addr := uint32(0)
-	ud := [4]uint32{}
-	_, _, err := syscall.Syscall(sys.PTRACE_GET_THREAD_AREA, uintptr(tid), uintptr(gs-4), uintptr(unsafe.Pointer(&ud)))
+	// ud := [4]uint32{0, uint32(gs), 0, 0}
+	ud := [16]byte{}
+	// gs usually is 0x33
+	_, _, err := syscall.Syscall6(syscall.SYS_PTRACE, sys.PTRACE_GET_THREAD_AREA, uintptr(tid), uintptr(unsafe.Pointer(&gs)), uintptr(unsafe.Pointer(&ud)), 0, 0)
 	if err == syscall.Errno(0) || err == syscall.ENODEV {
 		panic(err)
 	}
-	fmt.Printf("!!!!!!  %d %s, gs %d\n", tid, err, gs)
+
+	fmt.Printf("!!!!!!  tid := %d, err := %s, gs := %d\n", tid, err, gs)
 	fmt.Println(ud)
-	fmt.Println(addr)
 
-	for {
-		time.Sleep(time.Second)
-	}
-
-	return ud[1]
+	return uint32(ud[1])
 }
