@@ -65,6 +65,7 @@ func PtraceGetTls(gs int32, tid int) uint32 {
 	ud := [16]byte{}
 	// gs usually is 0x33
 	_, _, err := syscall.Syscall6(syscall.SYS_PTRACE, sys.PTRACE_GET_THREAD_AREA, uintptr(tid), uintptr(unsafe.Pointer(&gs)), uintptr(unsafe.Pointer(&ud)), 0, 0)
+	// _, _, err := syscall.Syscall6(syscall.SYS_PTRACE, sys.PTRACE_GET_THREAD_AREA, uintptr(tid), uintptr(gs), uintptr(unsafe.Pointer(&ud)), 0, 0)
 	if err == syscall.Errno(0) || err == syscall.ENODEV {
 		panic(err)
 	}

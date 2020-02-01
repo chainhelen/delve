@@ -1,0 +1,1 @@
+void SgdtAddr(unsigned short* limit ,unsigned long* base);
