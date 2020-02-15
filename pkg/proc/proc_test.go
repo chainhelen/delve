@@ -4115,8 +4115,8 @@ func TestReadDeferArgs(t *testing.T) {
 }
 
 func TestIssue1374(t *testing.T) {
-	if runtime.GOARCH == "arm64" {
-		t.Skip("arm64 does not support FunctionCall for now")
+	if runtime.GOARCH == "arm64" || runtime.GOARCH == "386" {
+		t.Skip(fmt.Errorf("%s does not support FunctionCall for now", runtime.GOARCH))
 	}
 	// Continue did not work when stopped at a breakpoint immediately after calling CallFunction.
 	protest.MustSupportFunctionCalls(t, testBackend)
@@ -4339,6 +4339,9 @@ func TestCallConcurrent(t *testing.T) {
 	}
 	if runtime.GOARCH == "arm64" {
 		t.Skip("arm64 does not support FunctionCall for now")
+	}
+	if runtime.GOARCH == "386" {
+		t.Skip("386 does not support FunctionCall for now")
 	}
 	protest.MustSupportFunctionCalls(t, testBackend)
 	withTestProcess("teststepconcurrent", t, func(p *proc.Target, fixture protest.Fixture) {

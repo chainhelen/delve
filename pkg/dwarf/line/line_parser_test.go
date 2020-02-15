@@ -6,6 +6,7 @@ import (
 	"debug/pe"
 	"flag"
 	"fmt"
+	"github.com/go-delve/delve/pkg/dwarf/util"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -67,8 +68,7 @@ const (
 
 func testDebugLinePrologueParser(p string, t *testing.T) {
 	data := grabDebugLineSection(p, t)
-	debugLines := ParseAll(data, nil, 0, true)
-
+	debugLines := ParseAll(data, nil, 0, true, util.PtrSizeByRuntimeArch())
 	mainFileFound := false
 
 	for _, dbl := range debugLines {
@@ -164,7 +164,7 @@ func BenchmarkLineParser(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = ParseAll(data, nil, 0, true)
+		_ = ParseAll(data, nil, 0, true, util.PtrSizeByRuntimeArch())
 	}
 }
 
@@ -179,7 +179,7 @@ func loadBenchmarkData(tb testing.TB) DebugLines {
 		tb.Fatal("Could not read test data", err)
 	}
 
-	return ParseAll(data, nil, 0, true)
+	return ParseAll(data, nil, 0, true, util.PtrSizeByRuntimeArch())
 }
 
 func BenchmarkStateMachine(b *testing.B) {
@@ -187,7 +187,7 @@ func BenchmarkStateMachine(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		sm := newStateMachine(lineInfos[0], lineInfos[0].Instructions)
+		sm := newStateMachine(lineInfos[0], lineInfos[0].Instructions, util.PtrSizeByRuntimeArch())
 
 		for {
 			if err := sm.next(); err != nil {
@@ -214,7 +214,7 @@ func setupTestPCToLine(t testing.TB, lineInfos DebugLines) ([]pctolineEntry, []u
 	entries := []pctolineEntry{}
 	basePCs := []uint64{}
 
-	sm := newStateMachine(lineInfos[0], lineInfos[0].Instructions)
+	sm := newStateMachine(lineInfos[0], lineInfos[0].Instructions, util.PtrSizeByRuntimeArch())
 	for {
 		if err := sm.next(); err != nil {
 			break

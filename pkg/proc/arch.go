@@ -22,6 +22,7 @@ type Arch interface {
 	RegistersToDwarfRegisters(uint64, Registers) op.DwarfRegisters
 	AddrAndStackRegsToDwarfRegisters(uint64, uint64, uint64, uint64, uint64) op.DwarfRegisters
 	DwarfRegisterToString(string, *op.DwarfRegister) string
+	DwarfSPRegNum() uint64
 }
 
 const (

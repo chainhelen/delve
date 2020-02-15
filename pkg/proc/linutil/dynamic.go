@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/go-delve/delve/pkg/proc"
 )
@@ -21,6 +22,24 @@ const (
 	_DT_DEBUG = 21 // DT_DEBUG as defined by SysV ABI specification
 )
 
+func readUintRaw(reader io.Reader, order binary.ByteOrder, ptrSize int) (uint64, error) {
+	switch ptrSize {
+	case 4:
+		var n uint32
+		if err := binary.Read(reader, order, n); err != nil {
+			return 0, err
+		}
+		return uint64(n), nil
+	case 8:
+		var n uint64
+		if err := binary.Read(reader, order, n); err != nil {
+			return 0, err
+		}
+		return n, nil
+	}
+	return 0, fmt.Errorf("not supprted ptr size %d", ptrSize)
+}
+
 // dynamicSearchDebug searches for the DT_DEBUG entry in the .dynamic section
 func dynamicSearchDebug(p proc.Process) (uint64, error) {
 	bi := p.BinInfo()
@@ -36,10 +55,10 @@ func dynamicSearchDebug(p proc.Process) (uint64, error) {
 
 	for {
 		var tag, val uint64
-		if err := binary.Read(rd, binary.LittleEndian, &tag); err != nil {
+		if tag, err = readUintRaw(rd, binary.LittleEndian, p.BinInfo().Arch.PtrSize()); err != nil {
 			return 0, err
 		}
-		if err := binary.Read(rd, binary.LittleEndian, &val); err != nil {
+		if val, err = readUintRaw(rd, binary.LittleEndian, p.BinInfo().Arch.PtrSize()); err != nil {
 			return 0, err
 		}
 		switch tag {

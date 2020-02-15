@@ -44,6 +44,10 @@ func TestGrafana(t *testing.T) {
 		t.Skip("filepath.Join ruins this test on windows")
 	}
 
+	if runtime.GOARCH == "386" {
+		t.Skip("debug.grafana.debug.gz maybe generated on 64bit machine")
+	}
+
 	debugBytes, err := slurpGzip("_testdata/debug.grafana.debug.gz")
 	if err != nil {
 		t.Fatal(err)
@@ -80,8 +84,8 @@ func TestGrafana(t *testing.T) {
 		}
 		cuname, _ := e.Val(dwarf.AttrName).(string)
 
-		lineInfo := Parse(e.Val(dwarf.AttrCompDir).(string), debugLineBuffer, t.Logf, 0, false)
-		sm := newStateMachine(lineInfo, lineInfo.Instructions)
+		lineInfo := Parse(e.Val(dwarf.AttrCompDir).(string), debugLineBuffer, t.Logf, 0, false, util.PtrSizeByRuntimeArch())
+		sm := newStateMachine(lineInfo, lineInfo.Instructions, util.PtrSizeByRuntimeArch())
 
 		lnrdr, err := data.LineReader(e)
 		if err != nil {
@@ -137,13 +141,20 @@ func TestMultipleSequences(t *testing.T) {
 	const thefile = "thefile.go"
 
 	instr := bytes.NewBuffer(nil)
+	ptrSize := util.PtrSizeByRuntimeArch()
 
 	write_DW_LNE_set_address := func(addr uint64) {
 		instr.WriteByte(0)
 		util.EncodeULEB128(instr, 9) // 1 + ptr_size
 		instr.WriteByte(DW_LINE_set_address)
-		binary.Write(instr, binary.LittleEndian, addr)
-
+		switch ptrSize {
+		case 8:
+			binary.Write(instr, binary.LittleEndian, addr)
+		case 4:
+			binary.Write(instr, binary.LittleEndian, uint32(addr))
+		default:
+			panic(fmt.Errorf("not support prt size %d", ptrSize))
+		}
 	}
 
 	write_DW_LNS_copy := func() {
@@ -215,6 +226,7 @@ func TestMultipleSequences(t *testing.T) {
 		IncludeDirs:  []string{},
 		FileNames:    []*FileEntry{&FileEntry{Path: thefile}},
 		Instructions: instr.Bytes(),
+		ptrSize:      ptrSize,
 	}
 
 	// Test that PCToLine is correct for all three sequences
@@ -235,7 +247,7 @@ func TestMultipleSequences(t *testing.T) {
 		{0x600002, 12},
 		{0x600004, 13},
 	} {
-		sm := newStateMachine(lines, lines.Instructions)
+		sm := newStateMachine(lines, lines.Instructions, lines.ptrSize)
 		file, curline, ok := sm.PCToLine(testCase.pc)
 		if !ok {
 			t.Fatalf("Could not find %#x", testCase.pc)

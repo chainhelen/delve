@@ -451,3 +451,6 @@ func (a *ARM64) DwarfRegisterToString(name string, reg *op.DwarfRegister) string
 	}
 	return fmt.Sprintf("%#x", reg.Bytes)
 }
+func (a *ARM64) DwarfSPRegNum() uint64 {
+	return arm64DwarfSPRegNum
+}

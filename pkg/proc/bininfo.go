@@ -98,7 +98,7 @@ type BinaryInfo struct {
 }
 
 // ErrUnsupportedLinuxArch is returned when attempting to debug a binary compiled for an unsupported architecture.
-var ErrUnsupportedLinuxArch = errors.New("unsupported architecture - only linux/amd64 and linux/arm64 are supported")
+var ErrUnsupportedLinuxArch = errors.New("unsupported architecture - only linux/amd64, linux/arm64 and linux/i386 are supported")
 
 // ErrUnsupportedWindowsArch is returned when attempting to debug a binary compiled for an unsupported architecture.
 var ErrUnsupportedWindowsArch = errors.New("unsupported architecture of windows/386 - only windows/amd64 is supported")
@@ -260,12 +260,13 @@ func NewBinaryInfo(goos, goarch string) *BinaryInfo {
 
 	// TODO: find better way to determine proc arch (perhaps use executable file info).
 	switch goarch {
+	case "386":
+		r.Arch = I386Arch(goos)
 	case "amd64":
 		r.Arch = AMD64Arch(goos)
 	case "arm64":
 		r.Arch = ARM64Arch(goos)
 	}
-
 	return r
 }
 
@@ -614,7 +615,7 @@ func (bi *BinaryInfo) LoadImageFromData(dwdata *dwarf.Data, debugFrameBytes, deb
 	image.typeCache = make(map[dwarf.Offset]godwarf.Type)
 
 	if debugFrameBytes != nil {
-		bi.frameEntries = frame.Parse(debugFrameBytes, frame.DwarfEndian(debugFrameBytes), 0)
+		bi.frameEntries = frame.Parse(debugFrameBytes, frame.DwarfEndian(debugFrameBytes), 0, bi.Arch.PtrSize())
 	}
 
 	image.loclist = loclist.New(debugLocBytes, bi.Arch.PtrSize())
@@ -697,7 +698,7 @@ func (bi *BinaryInfo) Location(entry reader.Entry, attr dwarf.Attr, pc uint64, r
 	if err != nil {
 		return 0, nil, "", err
 	}
-	addr, pieces, err := op.ExecuteStackProgram(regs, instr)
+	addr, pieces, err := op.ExecuteStackProgram(regs, instr, bi.Arch.PtrSize())
 	return addr, pieces, descr, err
 }
 
@@ -827,7 +828,7 @@ func (bi *BinaryInfo) openSeparateDebugInfo(image *Image, exe *elf.File, debugIn
 		return nil, nil, fmt.Errorf("can't open separate debug file %q: %v", debugFilePath, err.Error())
 	}
 
-	if elfFile.Machine != elf.EM_X86_64 && elfFile.Machine != elf.EM_AARCH64 {
+	if elfFile.Machine != elf.EM_X86_64 && elfFile.Machine != elf.EM_AARCH64 && elfFile.Machine != elf.EM_386 {
 		sepFile.Close()
 		return nil, nil, fmt.Errorf("can't open separate debug file %q: %v", debugFilePath, ErrUnsupportedLinuxArch.Error())
 	}
@@ -875,7 +876,7 @@ func loadBinaryInfoElf(bi *BinaryInfo, image *Image, path string, addr uint64, w
 	if err != nil {
 		return err
 	}
-	if elfFile.Machine != elf.EM_X86_64 && elfFile.Machine != elf.EM_AARCH64 {
+	if elfFile.Machine != elf.EM_X86_64 && elfFile.Machine != elf.EM_AARCH64 && elfFile.Machine != elf.EM_386 {
 		return ErrUnsupportedLinuxArch
 	}
 
@@ -936,7 +937,9 @@ func loadBinaryInfoElf(bi *BinaryInfo, image *Image, path string, addr uint64, w
 }
 
 func (bi *BinaryInfo) parseDebugFrameElf(image *Image, exe *elf.File, wg *sync.WaitGroup) {
-	defer wg.Done()
+	if wg != nil {
+		defer wg.Done()
+	}
 
 	debugFrameData, err := godwarf.GetDebugSectionElf(exe, "frame")
 	if err != nil {
@@ -949,7 +952,7 @@ func (bi *BinaryInfo) parseDebugFrameElf(image *Image, exe *elf.File, wg *sync.W
 		return
 	}
 
-	bi.frameEntries = bi.frameEntries.Append(frame.Parse(debugFrameData, frame.DwarfEndian(debugInfoData), image.StaticBase))
+	bi.frameEntries = bi.frameEntries.Append(frame.Parse(debugFrameData, frame.DwarfEndian(debugInfoData), image.StaticBase, bi.Arch.PtrSize()))
 }
 
 func (bi *BinaryInfo) setGStructOffsetElf(image *Image, exe *elf.File, wg *sync.WaitGroup) {
@@ -957,7 +960,7 @@ func (bi *BinaryInfo) setGStructOffsetElf(image *Image, exe *elf.File, wg *sync.
 
 	// This is a bit arcane. Essentially:
 	// - If the program is pure Go, it can do whatever it wants, and puts the G
-	//   pointer at %fs-8.
+	//   pointer at %fs-8 on 64 bit. The private storage 0(GS), but -4(GS) on 32 bit.
 	// - Otherwise, Go asks the external linker to place the G pointer by
 	//   emitting runtime.tlsg, a TLS symbol, which is relocated to the chosen
 	//   offset in libc's TLS block.
@@ -974,10 +977,6 @@ func (bi *BinaryInfo) setGStructOffsetElf(image *Image, exe *elf.File, wg *sync.
 			break
 		}
 	}
-	if tlsg == nil {
-		bi.gStructOffset = ^uint64(8) + 1 // -8
-		return
-	}
 	var tls *elf.Prog
 	for _, prog := range exe.Progs {
 		if prog.Type == elf.PT_TLS {
@@ -985,8 +984,15 @@ func (bi *BinaryInfo) setGStructOffsetElf(image *Image, exe *elf.File, wg *sync.
 			break
 		}
 	}
-	if tls == nil {
-		bi.gStructOffset = ^uint64(8) + 1 // -8
+	if tlsg == nil || tls == nil {
+		switch bi.Arch.PtrSize() {
+		case 4:
+			bi.gStructOffset = ^uint64(4) + 1 // -4
+		case 8:
+			bi.gStructOffset = ^uint64(8) + 1 // -8
+		default:
+			panic(fmt.Errorf("not support ptr size %d", bi.Arch.PtrSize()))
+		}
 		return
 	}
 
@@ -1078,7 +1084,7 @@ func (bi *BinaryInfo) parseDebugFramePE(image *Image, exe *pe.File, wg *sync.Wai
 		return
 	}
 
-	bi.frameEntries = bi.frameEntries.Append(frame.Parse(debugFrameBytes, frame.DwarfEndian(debugInfoBytes), image.StaticBase))
+	bi.frameEntries = bi.frameEntries.Append(frame.Parse(debugFrameBytes, frame.DwarfEndian(debugInfoBytes), image.StaticBase, bi.Arch.PtrSize()))
 }
 
 // Borrowed from https://golang.org/src/cmd/internal/objfile/pe.go
@@ -1125,8 +1131,10 @@ func loadBinaryInfoMacho(bi *BinaryInfo, image *Image, path string, entryPoint u
 	image.loclist = loclist.New(debugLocBytes, bi.Arch.PtrSize())
 
 	wg.Add(2)
-	go bi.parseDebugFrameMacho(image, exe, wg)
-	go bi.loadDebugInfoMaps(image, debugLineBytes, wg, bi.setGStructOffsetMacho)
+	wg.Done()
+	wg.Done()
+	go bi.parseDebugFrameMacho(image, exe, nil)
+	go bi.loadDebugInfoMaps(image, debugLineBytes, nil, bi.setGStructOffsetMacho)
 	return nil
 }
 
@@ -1143,7 +1151,9 @@ func (bi *BinaryInfo) setGStructOffsetMacho() {
 }
 
 func (bi *BinaryInfo) parseDebugFrameMacho(image *Image, exe *macho.File, wg *sync.WaitGroup) {
-	defer wg.Done()
+	if wg != nil {
+		defer wg.Done()
+	}
 
 	debugFrameBytes, err := godwarf.GetDebugSectionMacho(exe, "frame")
 	if err != nil {
@@ -1156,7 +1166,7 @@ func (bi *BinaryInfo) parseDebugFrameMacho(image *Image, exe *macho.File, wg *sy
 		return
 	}
 
-	bi.frameEntries = bi.frameEntries.Append(frame.Parse(debugFrameBytes, frame.DwarfEndian(debugInfoBytes), image.StaticBase))
+	bi.frameEntries = bi.frameEntries.Append(frame.Parse(debugFrameBytes, frame.DwarfEndian(debugInfoBytes), image.StaticBase, bi.Arch.PtrSize()))
 }
 
 // Do not call this function directly it isn't able to deal correctly with package paths
@@ -1327,7 +1337,7 @@ func (bi *BinaryInfo) loadDebugInfoMaps(image *Image, debugLineBytes []byte, wg 
 						logger.Printf(fmt, args)
 					}
 				}
-				cu.lineInfo = line.Parse(compdir, bytes.NewBuffer(debugLineBytes[lineInfoOffset:]), logfn, image.StaticBase, bi.GOOS == "windows")
+				cu.lineInfo = line.Parse(compdir, bytes.NewBuffer(debugLineBytes[lineInfoOffset:]), logfn, image.StaticBase, bi.GOOS == "windows", bi.Arch.PtrSize())
 			}
 			cu.producer, _ = entry.Val(dwarf.AttrProducer).(string)
 			if cu.isgo && cu.producer != "" {
@@ -1418,7 +1428,11 @@ func (bi *BinaryInfo) loadDebugInfoMapsCompileUnit(ctxt *loadDebugInfoMapsContex
 				var addr uint64
 				if loc, ok := entry.Val(dwarf.AttrLocation).([]byte); ok {
 					if len(loc) == bi.Arch.PtrSize()+1 && op.Opcode(loc[0]) == op.DW_OP_addr {
-						addr = binary.LittleEndian.Uint64(loc[1:])
+						if bi.Arch.PtrSize() == 4 {
+							addr = uint64(binary.LittleEndian.Uint32(loc[1:]))
+						} else {
+							addr = binary.LittleEndian.Uint64(loc[1:])
+						}
 					}
 				}
 				if !cu.isgo {

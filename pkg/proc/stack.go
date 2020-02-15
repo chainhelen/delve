@@ -100,7 +100,8 @@ func ThreadStacktrace(thread Thread, depth int) ([]Stackframe, error) {
 			return nil, err
 		}
 		so := thread.BinInfo().PCToImage(regs.PC())
-		it := newStackIterator(thread.BinInfo(), thread, thread.BinInfo().Arch.RegistersToDwarfRegisters(so.StaticBase, regs), 0, nil, -1, nil, 0)
+		ptrSize := thread.BinInfo().Arch.PtrSize()
+		it := newStackIterator(thread.BinInfo(), thread, thread.BinInfo().Arch.RegistersToDwarfRegisters(so.StaticBase, regs), 0, nil, -1, nil, 0, ptrSize)
 		return it.stacktrace(depth)
 	}
 	return g.Stacktrace(depth, 0)
@@ -121,13 +122,13 @@ func (g *G) stackIterator(opts StacktraceOptions) (*stackIterator, error) {
 		return newStackIterator(
 			g.variable.bi, g.Thread,
 			g.variable.bi.Arch.RegistersToDwarfRegisters(so.StaticBase, regs),
-			g.stackhi, stkbar, g.stkbarPos, g, opts), nil
+			g.stackhi, stkbar, g.stkbarPos, g, opts, g.variable.bi.Arch.PtrSize()), nil
 	}
 	so := g.variable.bi.PCToImage(g.PC)
 	return newStackIterator(
 		g.variable.bi, g.variable.mem,
 		g.variable.bi.Arch.AddrAndStackRegsToDwarfRegisters(so.StaticBase, g.PC, g.SP, g.BP, g.LR),
-		g.stackhi, stkbar, g.stkbarPos, g, opts), nil
+		g.stackhi, stkbar, g.stkbarPos, g, opts, g.variable.bi.Arch.PtrSize()), nil
 }
 
 type StacktraceOptions uint16
@@ -194,7 +195,8 @@ type stackIterator struct {
 	g0_sched_sp        uint64 // value of g0.sched.sp (see comments around its use)
 	g0_sched_sp_loaded bool   // g0_sched_sp was loaded from g0
 
-	opts StacktraceOptions
+	opts    StacktraceOptions
+	ptrSize int
 }
 
 type savedLR struct {
@@ -202,7 +204,7 @@ type savedLR struct {
 	val uint64
 }
 
-func newStackIterator(bi *BinaryInfo, mem MemoryReadWriter, regs op.DwarfRegisters, stackhi uint64, stkbar []savedLR, stkbarPos int, g *G, opts StacktraceOptions) *stackIterator {
+func newStackIterator(bi *BinaryInfo, mem MemoryReadWriter, regs op.DwarfRegisters, stackhi uint64, stkbar []savedLR, stkbarPos int, g *G, opts StacktraceOptions, ptrSize int) *stackIterator {
 	stackBarrierFunc := bi.LookupFunc["runtime.stackBarrier"] // stack barriers were removed in Go 1.9
 	var stackBarrierPC uint64
 	if stackBarrierFunc != nil && stkbar != nil {
@@ -226,7 +228,7 @@ func newStackIterator(bi *BinaryInfo, mem MemoryReadWriter, regs op.DwarfRegiste
 	if g != nil {
 		systemstack = g.SystemStack
 	}
-	return &stackIterator{pc: regs.PC(), regs: regs, top: true, bi: bi, mem: mem, err: nil, atend: false, stackhi: stackhi, stackBarrierPC: stackBarrierPC, stkbar: stkbar, systemstack: systemstack, g: g, opts: opts}
+	return &stackIterator{pc: regs.PC(), regs: regs, top: true, bi: bi, mem: mem, err: nil, atend: false, stackhi: stackhi, stackBarrierPC: stackBarrierPC, stkbar: stkbar, systemstack: systemstack, g: g, opts: opts, ptrSize: ptrSize}
 }
 
 // Next points the iterator to the next stack frame.
@@ -266,7 +268,8 @@ func (it *stackIterator) switchToGoroutineStack() {
 	it.top = false
 	it.pc = it.g.PC
 	it.regs.Reg(it.regs.SPRegNum).Uint64Val = it.g.SP
-	it.regs.Reg(it.regs.BPRegNum).Uint64Val = it.g.BP
+	// it.regs.Reg(it.regs.BPRegNum) is nil on 32 bit in some cases.
+	it.regs.AddReg(it.regs.BPRegNum, &op.DwarfRegister{Uint64Val: it.g.BP})
 	if _, ok := it.bi.Arch.(*ARM64); ok {
 		it.regs.Reg(it.regs.LRRegNum).Uint64Val = it.g.LR
 	}
@@ -438,11 +441,7 @@ func (it *stackIterator) advanceRegs() (callFrameRegs op.DwarfRegisters, ret uin
 	// implicit.
 	// See also the comment in dwarf2_frame_default_init in
 	// $GDB_SOURCE/dwarf2-frame.c
-	if _, ok := it.bi.Arch.(*ARM64); ok {
-		callFrameRegs.AddReg(uint64(arm64DwarfSPRegNum), cfareg)
-	} else {
-		callFrameRegs.AddReg(uint64(amd64DwarfSPRegNum), cfareg)
-	}
+	callFrameRegs.AddReg(it.bi.Arch.DwarfSPRegNum(), cfareg)
 
 	for i, regRule := range framectx.Regs {
 		reg, err := it.executeFrameRegRule(i, regRule, it.regs.CFA)
@@ -488,13 +487,13 @@ func (it *stackIterator) executeFrameRegRule(regnum uint64, rule frame.DWRule, c
 	case frame.RuleRegister:
 		return it.regs.Reg(rule.Reg), nil
 	case frame.RuleExpression:
-		v, _, err := op.ExecuteStackProgram(it.regs, rule.Expression)
+		v, _, err := op.ExecuteStackProgram(it.regs, rule.Expression, it.ptrSize)
 		if err != nil {
 			return nil, err
 		}
 		return it.readRegisterAt(regnum, uint64(v))
 	case frame.RuleValExpression:
-		v, _, err := op.ExecuteStackProgram(it.regs, rule.Expression)
+		v, _, err := op.ExecuteStackProgram(it.regs, rule.Expression, it.ptrSize)
 		if err != nil {
 			return nil, err
 		}
