@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/go-delve/delve/pkg/dwarf/frame"
 	"github.com/go-delve/delve/pkg/dwarf/op"
-	"golang.org/x/arch/x86/x86asm"
 	"strings"
 )
 
@@ -215,6 +214,7 @@ func (i *I386) SwitchStack(it *stackIterator, _ *op.DwarfRegisters) bool {
 			return false
 		}
 
+		it.loadG0SchedSP()
 		if it.g0_sched_sp <= 0 {
 			return false
 		}
@@ -289,16 +289,13 @@ func (i *I386) RegSize(regnum uint64) int {
 	return 4
 }
 
-var i386DwarfToHardware = map[int]x86asm.Reg{
-	0: x86asm.EAX,
-	1: x86asm.ECX,
-	2: x86asm.EDX,
-	3: x86asm.EBX,
-	6: x86asm.ESI,
-	7: x86asm.EDI,
-}
-
 var i386DwarfToName = map[int]string{
+	0:  "Eax",
+	1:  "Ecx",
+	2:  "Edx",
+	3:  "Ebx",
+	6:  "Esi",
+	7:  "Edi",
 	9:  "Eflags",
 	11: "ST(0)",
 	12: "ST(1)",
@@ -329,25 +326,20 @@ var i386NameToDwarf = func() map[string]int {
 	for regNum, regName := range i386DwarfToName {
 		r[strings.ToLower(regName)] = regNum
 	}
-	/*r["eflags"] = 49
-	r["st0"] = 33
-	r["st1"] = 34
-	r["st2"] = 35
-	r["st3"] = 36
-	r["st4"] = 37
-	r["st5"] = 38
-	r["st6"] = 39
-	r["st7"] = 40*/
+	r["eflags"] = 9
+	r["st0"] = 11
+	r["st1"] = 12
+	r["st2"] = 13
+	r["st3"] = 14
+	r["st4"] = 15
+	r["st5"] = 16
+	r["st6"] = 17
+	r["st7"] = 18
 	return r
 }()
 
 func maxI386DwarfRegister() int {
 	max := int(i386DwarfIPRegNum)
-	for i := range i386DwarfToHardware {
-		if i > max {
-			max = i
-		}
-	}
 	for i := range i386DwarfToName {
 		if i > max {
 			max = i
