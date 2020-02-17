@@ -27,6 +27,7 @@ import (
 	"github.com/go-delve/delve/pkg/dwarf/loclist"
 	"github.com/go-delve/delve/pkg/dwarf/op"
 	"github.com/go-delve/delve/pkg/dwarf/reader"
+	"github.com/go-delve/delve/pkg/dwarf/util"
 	"github.com/go-delve/delve/pkg/goversion"
 	"github.com/go-delve/delve/pkg/logflags"
 	"github.com/sirupsen/logrus"
@@ -49,6 +50,9 @@ type BinaryInfo struct {
 	Sources []string
 	// LookupFunc maps function names to a description of the function.
 	LookupFunc map[string]*Function
+
+	// SymNames maps addr to a description *elf.Symbol of this addr.
+	SymNames map[uint64]*elf.Symbol
 
 	// Images is a list of loaded shared libraries (also known as
 	// shared objects on linux or DLLs on windows).
@@ -98,7 +102,7 @@ type BinaryInfo struct {
 }
 
 // ErrUnsupportedLinuxArch is returned when attempting to debug a binary compiled for an unsupported architecture.
-var ErrUnsupportedLinuxArch = errors.New("unsupported architecture - only linux/amd64 and linux/arm64 are supported")
+var ErrUnsupportedLinuxArch = errors.New("unsupported architecture - only linux/amd64, linux/arm64 and linux/i386 are supported")
 
 // ErrUnsupportedWindowsArch is returned when attempting to debug a binary compiled for an unsupported architecture.
 var ErrUnsupportedWindowsArch = errors.New("unsupported architecture of windows/386 - only windows/amd64 is supported")
@@ -113,6 +117,12 @@ var ErrCouldNotDetermineRelocation = errors.New("could not determine the base ad
 // ErrNoDebugInfoFound is returned when Delve cannot open the debug_info
 // section or find an external debug info file.
 var ErrNoDebugInfoFound = errors.New("could not open debug info")
+
+var supportedLinuxArch = map[elf.Machine]bool{
+	elf.EM_X86_64:  true,
+	elf.EM_AARCH64: true,
+	elf.EM_386:     true,
+}
 
 const dwarfGoLanguage = 22 // DW_LANG_Go (from DWARF v5, section 7.12, page 231)
 
@@ -260,12 +270,13 @@ func NewBinaryInfo(goos, goarch string) *BinaryInfo {
 
 	// TODO: find better way to determine proc arch (perhaps use executable file info).
 	switch goarch {
+	case "386":
+		r.Arch = I386Arch(goos)
 	case "amd64":
 		r.Arch = AMD64Arch(goos)
 	case "arm64":
 		r.Arch = ARM64Arch(goos)
 	}
-
 	return r
 }
 
@@ -614,7 +625,7 @@ func (bi *BinaryInfo) LoadImageFromData(dwdata *dwarf.Data, debugFrameBytes, deb
 	image.typeCache = make(map[dwarf.Offset]godwarf.Type)
 
 	if debugFrameBytes != nil {
-		bi.frameEntries = frame.Parse(debugFrameBytes, frame.DwarfEndian(debugFrameBytes), 0)
+		bi.frameEntries = frame.Parse(debugFrameBytes, frame.DwarfEndian(debugFrameBytes), 0, bi.Arch.PtrSize())
 	}
 
 	image.loclist = loclist.New(debugLocBytes, bi.Arch.PtrSize())
@@ -697,7 +708,7 @@ func (bi *BinaryInfo) Location(entry reader.Entry, attr dwarf.Attr, pc uint64, r
 	if err != nil {
 		return 0, nil, "", err
 	}
-	addr, pieces, err := op.ExecuteStackProgram(regs, instr)
+	addr, pieces, err := op.ExecuteStackProgram(regs, instr, bi.Arch.PtrSize())
 	return addr, pieces, descr, err
 }
 
@@ -827,7 +838,7 @@ func (bi *BinaryInfo) openSeparateDebugInfo(image *Image, exe *elf.File, debugIn
 		return nil, nil, fmt.Errorf("can't open separate debug file %q: %v", debugFilePath, err.Error())
 	}
 
-	if elfFile.Machine != elf.EM_X86_64 && elfFile.Machine != elf.EM_AARCH64 {
+	if !supportedLinuxArch[elfFile.Machine] {
 		sepFile.Close()
 		return nil, nil, fmt.Errorf("can't open separate debug file %q: %v", debugFilePath, ErrUnsupportedLinuxArch.Error())
 	}
@@ -875,7 +886,7 @@ func loadBinaryInfoElf(bi *BinaryInfo, image *Image, path string, addr uint64, w
 	if err != nil {
 		return err
 	}
-	if elfFile.Machine != elf.EM_X86_64 && elfFile.Machine != elf.EM_AARCH64 {
+	if !supportedLinuxArch[elfFile.Machine] {
 		return ErrUnsupportedLinuxArch
 	}
 
@@ -924,15 +935,35 @@ func loadBinaryInfoElf(bi *BinaryInfo, image *Image, path string, addr uint64, w
 	debugLocBytes, _ := godwarf.GetDebugSectionElf(dwarfFile, "loc")
 	image.loclist = loclist.New(debugLocBytes, bi.Arch.PtrSize())
 
-	wg.Add(2)
+	wg.Add(3)
 	go bi.parseDebugFrameElf(image, dwarfFile, wg)
 	go bi.loadDebugInfoMaps(image, debugLineBytes, wg, nil)
+	go bi.loadSymbolName(image, elfFile, wg)
 	if image.index == 0 {
 		// determine g struct offset only when loading the executable file
 		wg.Add(1)
 		go bi.setGStructOffsetElf(image, dwarfFile, wg)
 	}
 	return nil
+}
+
+//  STT_FUNC is a code object, see /usr/include/elf.h for a full definition.
+const STT_FUNC = 2
+
+func (bi *BinaryInfo) loadSymbolName(image *Image, file *elf.File, wg *sync.WaitGroup) {
+	defer wg.Done()
+	if bi.SymNames == nil {
+		bi.SymNames = make(map[uint64]*elf.Symbol)
+	}
+	symSecs, _ := file.Symbols()
+	if symSecs != nil {
+		for _, symSec := range symSecs {
+			if symSec.Info == STT_FUNC { // TODO(chainhelen), need to parse others types.
+				s := symSec
+				bi.SymNames[symSec.Value+image.StaticBase] = &s
+			}
+		}
+	}
 }
 
 func (bi *BinaryInfo) parseDebugFrameElf(image *Image, exe *elf.File, wg *sync.WaitGroup) {
@@ -949,7 +980,7 @@ func (bi *BinaryInfo) parseDebugFrameElf(image *Image, exe *elf.File, wg *sync.W
 		return
 	}
 
-	bi.frameEntries = bi.frameEntries.Append(frame.Parse(debugFrameData, frame.DwarfEndian(debugInfoData), image.StaticBase))
+	bi.frameEntries = bi.frameEntries.Append(frame.Parse(debugFrameData, frame.DwarfEndian(debugInfoData), image.StaticBase, bi.Arch.PtrSize()))
 }
 
 func (bi *BinaryInfo) setGStructOffsetElf(image *Image, exe *elf.File, wg *sync.WaitGroup) {
@@ -957,7 +988,9 @@ func (bi *BinaryInfo) setGStructOffsetElf(image *Image, exe *elf.File, wg *sync.
 
 	// This is a bit arcane. Essentially:
 	// - If the program is pure Go, it can do whatever it wants, and puts the G
-	//   pointer at %fs-8.
+	//   pointer at %fs-8 on 64 bit.
+	// - %Gs is the index of private storage in GDT on 32 bit, and puts the G
+	//   pointer at -4(tls).
 	// - Otherwise, Go asks the external linker to place the G pointer by
 	//   emitting runtime.tlsg, a TLS symbol, which is relocated to the chosen
 	//   offset in libc's TLS block.
@@ -974,10 +1007,6 @@ func (bi *BinaryInfo) setGStructOffsetElf(image *Image, exe *elf.File, wg *sync.
 			break
 		}
 	}
-	if tlsg == nil {
-		bi.gStructOffset = ^uint64(8) + 1 // -8
-		return
-	}
 	var tls *elf.Prog
 	for _, prog := range exe.Progs {
 		if prog.Type == elf.PT_TLS {
@@ -985,8 +1014,8 @@ func (bi *BinaryInfo) setGStructOffsetElf(image *Image, exe *elf.File, wg *sync.
 			break
 		}
 	}
-	if tls == nil {
-		bi.gStructOffset = ^uint64(8) + 1 // -8
+	if tlsg == nil || tls == nil {
+		bi.gStructOffset = ^uint64(bi.Arch.PtrSize()) + 1 //-ptrSize
 		return
 	}
 
@@ -1078,7 +1107,7 @@ func (bi *BinaryInfo) parseDebugFramePE(image *Image, exe *pe.File, wg *sync.Wai
 		return
 	}
 
-	bi.frameEntries = bi.frameEntries.Append(frame.Parse(debugFrameBytes, frame.DwarfEndian(debugInfoBytes), image.StaticBase))
+	bi.frameEntries = bi.frameEntries.Append(frame.Parse(debugFrameBytes, frame.DwarfEndian(debugInfoBytes), image.StaticBase, bi.Arch.PtrSize()))
 }
 
 // Borrowed from https://golang.org/src/cmd/internal/objfile/pe.go
@@ -1156,7 +1185,7 @@ func (bi *BinaryInfo) parseDebugFrameMacho(image *Image, exe *macho.File, wg *sy
 		return
 	}
 
-	bi.frameEntries = bi.frameEntries.Append(frame.Parse(debugFrameBytes, frame.DwarfEndian(debugInfoBytes), image.StaticBase))
+	bi.frameEntries = bi.frameEntries.Append(frame.Parse(debugFrameBytes, frame.DwarfEndian(debugInfoBytes), image.StaticBase, bi.Arch.PtrSize()))
 }
 
 // Do not call this function directly it isn't able to deal correctly with package paths
@@ -1327,7 +1356,7 @@ func (bi *BinaryInfo) loadDebugInfoMaps(image *Image, debugLineBytes []byte, wg 
 						logger.Printf(fmt, args)
 					}
 				}
-				cu.lineInfo = line.Parse(compdir, bytes.NewBuffer(debugLineBytes[lineInfoOffset:]), logfn, image.StaticBase, bi.GOOS == "windows")
+				cu.lineInfo = line.Parse(compdir, bytes.NewBuffer(debugLineBytes[lineInfoOffset:]), logfn, image.StaticBase, bi.GOOS == "windows", bi.Arch.PtrSize())
 			}
 			cu.producer, _ = entry.Val(dwarf.AttrProducer).(string)
 			if cu.isgo && cu.producer != "" {
@@ -1418,7 +1447,7 @@ func (bi *BinaryInfo) loadDebugInfoMapsCompileUnit(ctxt *loadDebugInfoMapsContex
 				var addr uint64
 				if loc, ok := entry.Val(dwarf.AttrLocation).([]byte); ok {
 					if len(loc) == bi.Arch.PtrSize()+1 && op.Opcode(loc[0]) == op.DW_OP_addr {
-						addr = binary.LittleEndian.Uint64(loc[1:])
+						addr, _ = util.ReadUintRaw(bytes.NewReader(loc[1:]), binary.LittleEndian, bi.Arch.PtrSize())
 					}
 				}
 				if !cu.isgo {
@@ -1740,6 +1769,9 @@ func (bi *BinaryInfo) symLookup(addr uint64) (string, uint64) {
 			return fn.Name, fn.Entry
 		}
 		return "", 0
+	}
+	if sym, ok := bi.SymNames[addr]; ok {
+		return sym.Name, addr
 	}
 	i := sort.Search(len(bi.packageVars), func(i int) bool {
 		return bi.packageVars[i].addr >= addr
