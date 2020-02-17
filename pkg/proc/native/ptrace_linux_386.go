@@ -1,6 +1,9 @@
 package native
 
+import "C"
+
 import (
+	"fmt"
 	"syscall"
 	"unsafe"
 
@@ -11,11 +14,11 @@ import (
 
 // PtraceGetRegset returns floating point registers of the specified thread
 // using PTRACE.
-// See amd64_linux_fetch_inferior_registers in gdb/amd64-linux-nat.c.html
-// and amd64_supply_xsave in gdb/amd64-tdep.c.html
+// See i386_linux_fetch_inferior_registers in gdb/i386-linux-nat.c.html
+// and i386_supply_xsave in gdb/i386-tdep.c.html
 // and Section 13.1 (and following) of Intel® 64 and IA-32 Architectures Software Developer’s Manual, Volume 1: Basic Architecture
-func PtraceGetRegset(tid int) (regset linutil.AMD64Xstate, err error) {
-	_, _, err = syscall.Syscall6(syscall.SYS_PTRACE, sys.PTRACE_GETFPREGS, uintptr(tid), uintptr(0), uintptr(unsafe.Pointer(&regset.AMD64PtraceFpRegs)), 0, 0)
+func PtraceGetRegset(tid int) (regset linutil.I386Xstate, err error) {
+	_, _, err = syscall.Syscall6(syscall.SYS_PTRACE, sys.PTRACE_GETFPREGS, uintptr(tid), uintptr(0), uintptr(unsafe.Pointer(&regset.I386PtraceFpRegs)), 0, 0)
 	if err == syscall.Errno(0) || err == syscall.ENODEV {
 		// ignore ENODEV, it just means this CPU doesn't have X87 registers (??)
 		err = nil
@@ -36,13 +39,34 @@ func PtraceGetRegset(tid int) (regset linutil.AMD64Xstate, err error) {
 	}
 
 	regset.Xsave = xstateargs[:iov.Len]
-	err = linutil.AMD64XstateRead(regset.Xsave, false, &regset)
+	err = linutil.I386XstateRead(regset.Xsave, false, &regset)
 	return
+}
+
+// PtraceGetTls return the addr of tls by PTRACE_GET_THREAD_AREA for specify thread.
+// See http://man7.org/linux/man-pages/man2/ptrace.2.html for detail about PTRACE_GET_THREAD_AREA.
+// struct user_desc at https://golang.org/src/runtime/sys_linux_386.s
+// type UserDesc struct {
+// 	 EntryNumber uint32
+//	 BaseAddr    uint32
+//	 Limit       uint32
+//	 Flag        uint32
+// }
+func PtraceGetTls(gs int32, tid int) (uint32, error) {
+	ud := [4]uint32{}
+
+	// Gs usually is 0x33
+	_, _, err := syscall.Syscall6(syscall.SYS_PTRACE, sys.PTRACE_GET_THREAD_AREA, uintptr(tid), uintptr(gs>>3), uintptr(unsafe.Pointer(&ud)), 0, 0)
+	if err == syscall.ENODEV || err == syscall.EIO {
+		return 0, fmt.Errorf("%s", err)
+	}
+
+	return uint32(ud[1]), nil
 }
 
 // ProcessVmRead calls process_vm_readv
 func ProcessVmRead(tid int, addr uintptr, data []byte) (int, error) {
-	len_iov := uint64(len(data))
+	len_iov := uint32(len(data))
 	local_iov := sys.Iovec{Base: &data[0], Len: len_iov}
 	remote_iov := sys.Iovec{Base: (*byte)(unsafe.Pointer(addr)), Len: len_iov}
 	p_local := uintptr(unsafe.Pointer(&local_iov))
@@ -56,7 +80,7 @@ func ProcessVmRead(tid int, addr uintptr, data []byte) (int, error) {
 
 // ProcessVmWrite calls process_vm_writev
 func ProcessVmWrite(tid int, addr uintptr, data []byte) (int, error) {
-	len_iov := uint64(len(data))
+	len_iov := uint32(len(data))
 	local_iov := sys.Iovec{Base: &data[0], Len: len_iov}
 	remote_iov := sys.Iovec{Base: (*byte)(unsafe.Pointer(addr)), Len: len_iov}
 	p_local := uintptr(unsafe.Pointer(&local_iov))

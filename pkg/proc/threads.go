@@ -1,7 +1,6 @@
 package proc
 
 import (
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"go/ast"
@@ -206,6 +205,11 @@ func next(dbp Process, stepInto, inlinedStepOut bool) error {
 	if stepInto {
 		for _, instr := range text {
 			if instr.Loc.File != topframe.Current.File || instr.Loc.Line != topframe.Current.Line || !instr.IsCall() {
+				continue
+			}
+
+			bi := dbp.BinInfo()
+			if instr.IsCall() && instr.DestLoc != nil && bi.Arch.InhibitStepInto(bi, instr.DestLoc.PC) {
 				continue
 			}
 
@@ -427,12 +431,11 @@ func getGVariable(thread Thread) (*Variable, error) {
 
 	gaddr, hasgaddr := regs.GAddr()
 	if !hasgaddr {
-		gaddrbs := make([]byte, thread.Arch().PtrSize())
-		_, err := thread.ReadMemory(gaddrbs, uintptr(regs.TLS()+thread.BinInfo().GStructOffset()))
+		var err error
+		gaddr, err = readUintRaw(thread, uintptr(regs.TLS()+thread.BinInfo().GStructOffset()), int64(thread.BinInfo().Arch.PtrSize()))
 		if err != nil {
 			return nil, err
 		}
-		gaddr = binary.LittleEndian.Uint64(gaddrbs)
 	}
 
 	return newGVariable(thread, uintptr(gaddr), thread.Arch().DerefTLS())
