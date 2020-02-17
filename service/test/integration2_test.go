@@ -1052,6 +1052,15 @@ func TestDisasm(t *testing.T) {
 			if strings.HasPrefix(curinstr.Text, "call") || strings.HasPrefix(curinstr.Text, "CALL") {
 				t.Logf("call: %v", curinstr)
 				if curinstr.DestLoc == nil || curinstr.DestLoc.Function == nil {
+					// On 386 linux when pie, maybe meet  "call $__x86.get_pc_thunk." first
+					// but there is no any symbol name or file name. Try stepInstruction 2 times
+					// to step it out, then continue to search.
+					if strings.Contains(curinstr.Text, "__x86.get_pc_thunk") {
+						c.StepInstruction()
+						c.StepInstruction()
+						count++
+						continue
+					}
 					t.Fatalf("Call instruction does not have destination: %v", curinstr)
 				}
 				if curinstr.DestLoc.Function.Name() != "main.afunction" {
@@ -1154,13 +1163,14 @@ func TestSkipPrologue2(t *testing.T) {
 		callme3 := findLocationHelper(t, c, "main.callme3", false, 1, 0)[0]
 		callme3Z := uint64(clientEvalVariable(t, c, "main.callme3").Addr)
 		ver, _ := goversion.Parse(runtime.Version())
-		if ver.Major < 0 || ver.AfterOrEqual(goversion.GoVer18Beta) {
+
+		if (ver.Major < 0 || ver.AfterOrEqual(goversion.GoVer18Beta)) && runtime.GOARCH != "386" {
 			findLocationHelper(t, c, "callme.go:19", false, 1, callme3)
 		} else {
 			// callme3 does not have local variables therefore the first line of the
 			// function is immediately after the prologue
-			// This is only true before 1.8 where frame pointer chaining introduced a
-			// bit of prologue even for functions without local variables
+			// This is only true before go1.8 or on Intel386 where frame pointer chaining
+			// introduced a bit of prologue even for functions without local variables
 			findLocationHelper(t, c, "callme.go:19", false, 1, callme3Z)
 		}
 		if callme3 == callme3Z {

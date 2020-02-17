@@ -2,6 +2,8 @@ package util
 
 import (
 	"bytes"
+	"encoding/binary"
+	"fmt"
 	"io"
 )
 
@@ -123,4 +125,32 @@ func ParseString(data *bytes.Buffer) (string, uint32) {
 	}
 
 	return str[:len(str)-1], uint32(len(str))
+}
+
+func ReadUintRaw(reader io.Reader, order binary.ByteOrder, ptrSize int) (uint64, error) {
+	switch ptrSize {
+	case 4:
+		var n uint32
+		if err := binary.Read(reader, order, &n); err != nil {
+			return 0, err
+		}
+		return uint64(n), nil
+	case 8:
+		var n uint64
+		if err := binary.Read(reader, order, &n); err != nil {
+			return 0, err
+		}
+		return n, nil
+	}
+	return 0, fmt.Errorf("not supprted ptr size %d", ptrSize)
+}
+
+func WriteUint(writer io.Writer, order binary.ByteOrder, ptrSize int, data uint64) error {
+	switch ptrSize {
+	case 4:
+		return binary.Write(writer, order, uint32(data))
+	case 8:
+		return binary.Write(writer, order, data)
+	}
+	return fmt.Errorf("not support prt size %d", ptrSize)
 }

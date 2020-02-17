@@ -945,6 +945,14 @@ func Test1Disasm(t *testing.T) {
 			if strings.HasPrefix(curinstr.Text, "call") || strings.HasPrefix(curinstr.Text, "CALL") {
 				t.Logf("call: %v", curinstr)
 				if curinstr.DestLoc == nil || curinstr.DestLoc.Function == nil {
+					// On 386 linux when pie, maybe meet  "call __x86.get_pc_thunk." first but not find any symbol name or file name.
+					// Try stepInstruction 2 times to step it out, then continue to search.
+					if runtime.GOARCH == "386" && runtime.GOOS == "linux" && buildMode == "pie" {
+						c.StepInstruction()
+						c.StepInstruction()
+						count++
+						continue
+					}
 					t.Fatalf("Call instruction does not have destination: %v", curinstr)
 				}
 				if curinstr.DestLoc.Function.Name() != "main.afunction" {
