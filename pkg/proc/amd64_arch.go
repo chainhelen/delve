@@ -558,3 +558,9 @@ func formatX87Reg(b []byte) string {
 
 	return fmt.Sprintf("%#04x%016x\t%g", exponent, mantissa, f)
 }
+
+// InhibitStepInto returns whether StepBreakpoint can be set at pc.
+// Always return false on amd64.
+func (a *AMD64) InhibitStepInto(bi *BinaryInfo, pc uint64) bool {
+	return false
+}

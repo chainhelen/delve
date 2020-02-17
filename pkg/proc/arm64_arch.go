@@ -465,3 +465,9 @@ func (a *ARM64) DwarfRegisterToString(i int, reg *op.DwarfRegister) (name string
 	}
 	return name, false, fmt.Sprintf("%#x", reg.Bytes)
 }
+
+// InhibitStepInto returns whether StepBreakpoint can be set at pc.
+// Always return false on arm64.
+func (a *ARM64) InhibitStepInto(bi *BinaryInfo, pc uint64) bool {
+	return false
+}
