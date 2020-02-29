@@ -127,6 +127,7 @@ func ParseString(data *bytes.Buffer) (string, uint32) {
 	return str[:len(str)-1], uint32(len(str))
 }
 
+// ReadUintRaw reads an integer of ptrSize bytes, with the specified byte order, from reader.
 func ReadUintRaw(reader io.Reader, order binary.ByteOrder, ptrSize int) (uint64, error) {
 	switch ptrSize {
 	case 4:
@@ -145,6 +146,7 @@ func ReadUintRaw(reader io.Reader, order binary.ByteOrder, ptrSize int) (uint64,
 	return 0, fmt.Errorf("not supprted ptr size %d", ptrSize)
 }
 
+// WriteUint writes an integer of ptrSize bytes to writer, in the specified byte order.
 func WriteUint(writer io.Writer, order binary.ByteOrder, ptrSize int, data uint64) error {
 	switch ptrSize {
 	case 4:

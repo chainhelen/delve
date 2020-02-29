@@ -43,11 +43,6 @@ func TestGrafana(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("filepath.Join ruins this test on windows")
 	}
-
-	if ptrSizeByRuntimeArch() != 8 {
-		t.Skip("test debug.grafana.debug.gz only on 64bit machine")
-	}
-
 	debugBytes, err := slurpGzip("_testdata/debug.grafana.debug.gz")
 	if err != nil {
 		t.Fatal(err)
@@ -84,8 +79,8 @@ func TestGrafana(t *testing.T) {
 		}
 		cuname, _ := e.Val(dwarf.AttrName).(string)
 
-		lineInfo := Parse(e.Val(dwarf.AttrCompDir).(string), debugLineBuffer, t.Logf, 0, false, ptrSizeByRuntimeArch())
-		sm := newStateMachine(lineInfo, lineInfo.Instructions, ptrSizeByRuntimeArch())
+		lineInfo := Parse(e.Val(dwarf.AttrCompDir).(string), debugLineBuffer, t.Logf, 0, false, 8)
+		sm := newStateMachine(lineInfo, lineInfo.Instructions, 8)
 
 		lnrdr, err := data.LineReader(e)
 		if err != nil {

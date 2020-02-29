@@ -22,6 +22,7 @@ const (
 	_DT_DEBUG = 21 // DT_DEBUG as defined by SysV ABI specification
 )
 
+// readUintRaw reads an integer of ptrSize bytes, with the specified byte order, from reader.
 func readUintRaw(reader io.Reader, order binary.ByteOrder, ptrSize int) (uint64, error) {
 	switch ptrSize {
 	case 4:

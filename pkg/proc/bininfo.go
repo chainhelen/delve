@@ -1015,7 +1015,7 @@ func (bi *BinaryInfo) setGStructOffsetElf(image *Image, exe *elf.File, wg *sync.
 		}
 	}
 	if tlsg == nil || tls == nil {
-		bi.gStructOffset = ^uint64(bi.Arch.PtrSize()) + 1 //-ptrSize + 1
+		bi.gStructOffset = ^uint64(bi.Arch.PtrSize()) + 1 //-ptrSize
 		return
 	}
 
