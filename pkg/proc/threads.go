@@ -399,7 +399,7 @@ func setStepIntoBreakpoint(dbp Process, text []AsmInstruction, cond ast.Expr) er
 	pc := instr.DestLoc.PC
 
 	// Skip InhibitStepInto functions for different arch.
-	if instr.IsCall() && dbp.BinInfo().Arch.InhibitStepInto(dbp.BinInfo(), pc) {
+	if dbp.BinInfo().Arch.InhibitStepInto(dbp.BinInfo(), pc) {
 		return nil
 	}
 
