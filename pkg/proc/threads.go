@@ -208,12 +208,7 @@ func next(dbp Process, stepInto, inlinedStepOut bool) error {
 				continue
 			}
 
-			bi := dbp.BinInfo()
-			if instr.IsCall() && instr.DestLoc != nil && bi.Arch.InhibitStepInto(bi, instr.DestLoc.PC) {
-				continue
-			}
-
-			if instr.DestLoc != nil && instr.DestLoc.Fn != nil {
+			if instr.DestLoc != nil {
 				if err := setStepIntoBreakpoint(dbp, []AsmInstruction{instr}, sameGCond); err != nil {
 					return err
 				}
@@ -402,6 +397,11 @@ func setStepIntoBreakpoint(dbp Process, text []AsmInstruction, cond ast.Expr) er
 	// those extra checks should be done here.
 
 	pc := instr.DestLoc.PC
+
+	// Skip InhibitStepInto functions for different arch.
+	if instr.IsCall() && dbp.BinInfo().Arch.InhibitStepInto(dbp.BinInfo(), pc) {
+		return nil
+	}
 
 	// We want to skip the function prologue but we should only do it if the
 	// destination address of the CALL instruction is the entry point of the
