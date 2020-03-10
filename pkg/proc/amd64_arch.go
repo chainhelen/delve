@@ -51,7 +51,7 @@ func (a *AMD64) PtrSize() int {
 	return 8
 }
 
-// MaxInstructionLength returns the maximum lenght of an instruction.
+// MaxInstructionLength returns the maximum length of an instruction.
 func (a *AMD64) MaxInstructionLength() int {
 	return 15
 }

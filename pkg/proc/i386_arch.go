@@ -47,7 +47,7 @@ func (i *I386) PtrSize() int {
 	return 4
 }
 
-// MaxInstructionLength returns the maximum lenght of an instruction.
+// MaxInstructionLength returns the maximum length of an instruction.
 func (i *I386) MaxInstructionLength() int {
 	return 15
 }
