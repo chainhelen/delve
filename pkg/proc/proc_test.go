@@ -2073,15 +2073,17 @@ func TestUnsupportedArch(t *testing.T) {
 		t.Skip("test not valid for this backend")
 	}
 
-	switch err {
-	case proc.ErrUnsupportedLinuxArch, proc.ErrUnsupportedWindowsArch, proc.ErrUnsupportedDarwinArch:
-		// all good
-	case nil:
+	if err == nil {
 		p.Detach(true)
 		t.Fatal("Launch is expected to fail, but succeeded")
-	default:
-		t.Fatal(err)
 	}
+
+	if _, ok := err.(*proc.ErrUnsupportedArch); ok {
+		// all good
+		return
+	}
+
+	t.Fatal(err)
 }
 
 func TestIssue573(t *testing.T) {

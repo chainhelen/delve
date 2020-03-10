@@ -101,15 +101,6 @@ type BinaryInfo struct {
 	logger *logrus.Entry
 }
 
-// ErrUnsupportedLinuxArch is returned when attempting to debug a binary compiled for an unsupported architecture.
-var ErrUnsupportedLinuxArch = errors.New("unsupported architecture - only linux/amd64, linux/arm64 and linux/i386 are supported")
-
-// ErrUnsupportedWindowsArch is returned when attempting to debug a binary compiled for an unsupported architecture.
-var ErrUnsupportedWindowsArch = errors.New("unsupported architecture of windows/386 - only windows/amd64 is supported")
-
-// ErrUnsupportedDarwinArch is returned when attempting to debug a binary compiled for an unsupported architecture.
-var ErrUnsupportedDarwinArch = errors.New("unsupported architecture - only darwin/amd64 is supported")
-
 // ErrCouldNotDetermineRelocation is an error returned when Delve could not determine the base address of a
 // position independant executable.
 var ErrCouldNotDetermineRelocation = errors.New("could not determine the base address of a PIE")
@@ -118,10 +109,59 @@ var ErrCouldNotDetermineRelocation = errors.New("could not determine the base ad
 // section or find an external debug info file.
 var ErrNoDebugInfoFound = errors.New("could not open debug info")
 
+// ErrUnsupportedArch is returned when attempting to debug a binary compiled for an unsupported architecture.
+type ErrUnsupportedArch struct {
+	os      string
+	cpuArch CpuArch
+}
+
+type CpuArch interface {
+	String() string
+}
+
+func (e *ErrUnsupportedArch) Error() string {
+	var supportArchs []CpuArch
+	switch e.os {
+	case "linux":
+		for linuxArch, _ := range supportedLinuxArch {
+			supportArchs = append(supportArchs, linuxArch)
+		}
+	case "windows":
+		for windowArch, _ := range supportedWindowsArch {
+			supportArchs = append(supportArchs, windowArch)
+		}
+	case "darwin":
+		for darwinArch, _ := range supportedDarwinArch {
+			supportArchs = append(supportArchs, darwinArch)
+		}
+	}
+
+	errStr := "unsupported architecture of " + e.os + "/" + e.cpuArch.String()
+	errStr += " - only"
+	for _, arch := range supportArchs {
+		errStr += " " + e.os + "/" + arch.String() + " "
+	}
+	if len(supportArchs) == 1 {
+		errStr += "is supported"
+	} else {
+		errStr += "are supported"
+	}
+
+	return errStr
+}
+
 var supportedLinuxArch = map[elf.Machine]bool{
 	elf.EM_X86_64:  true,
 	elf.EM_AARCH64: true,
 	elf.EM_386:     true,
+}
+
+var supportedWindowsArch = map[PEMachine]bool{
+	IMAGE_FILE_MACHINE_AMD64: true,
+}
+
+var supportedDarwinArch = map[macho.Cpu]bool{
+	macho.CpuAmd64: true,
 }
 
 const dwarfGoLanguage = 22 // DW_LANG_Go (from DWARF v5, section 7.12, page 231)
@@ -840,7 +880,7 @@ func (bi *BinaryInfo) openSeparateDebugInfo(image *Image, exe *elf.File, debugIn
 
 	if !supportedLinuxArch[elfFile.Machine] {
 		sepFile.Close()
-		return nil, nil, fmt.Errorf("can't open separate debug file %q: %v", debugFilePath, ErrUnsupportedLinuxArch.Error())
+		return nil, nil, fmt.Errorf("can't open separate debug file %q: %v", debugFilePath, &ErrUnsupportedArch{os: "linux", cpuArch: elfFile.Machine})
 	}
 
 	return sepFile, elfFile, nil
@@ -887,7 +927,7 @@ func loadBinaryInfoElf(bi *BinaryInfo, image *Image, path string, addr uint64, w
 		return err
 	}
 	if !supportedLinuxArch[elfFile.Machine] {
-		return ErrUnsupportedLinuxArch
+		return &ErrUnsupportedArch{os: "linux", cpuArch: elfFile.Machine}
 	}
 
 	if image.index == 0 {
@@ -1041,8 +1081,9 @@ func loadBinaryInfoPE(bi *BinaryInfo, image *Image, path string, entryPoint uint
 		return err
 	}
 	image.closer = closer
-	if peFile.Machine != pe.IMAGE_FILE_MACHINE_AMD64 {
-		return ErrUnsupportedWindowsArch
+	cpuArch := PEMachine(peFile.Machine)
+	if !supportedWindowsArch[cpuArch] {
+		return &ErrUnsupportedArch{os: "windows", cpuArch: cpuArch}
 	}
 	image.dwarf, err = peFile.DWARF()
 	if err != nil {
@@ -1136,8 +1177,8 @@ func loadBinaryInfoMacho(bi *BinaryInfo, image *Image, path string, entryPoint u
 		return err
 	}
 	image.closer = exe
-	if exe.Cpu != macho.CpuAmd64 {
-		return ErrUnsupportedDarwinArch
+	if !supportedDarwinArch[exe.Cpu] {
+		return &ErrUnsupportedArch{os: "darwin", cpuArch: exe.Cpu}
 	}
 	image.dwarf, err = exe.DWARF()
 	if err != nil {
